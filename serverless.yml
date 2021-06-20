@@ -6,7 +6,6 @@ configValidationMode: error
 
 plugins:
   - serverless-pseudo-parameters
-  - serverless-ignore
 
 provider:
   name: aws
