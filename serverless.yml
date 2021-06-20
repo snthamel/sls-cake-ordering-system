@@ -1,0 +1,131 @@
+service: sls-cake-ordering-system
+
+frameworkVersion: '2'
+
+configValidationMode: error
+
+plugins:
+  - serverless-pseudo-parameters
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  lambdaHashingVersion: 20201221
+
+  iam:
+    role:
+      statements:
+        - Effect: 'Allow'
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:GetItem
+          Resource: arn:aws:dynamodb:#{AWS::Region}:#{AWS::AccountId}:table/ordersTable
+        - Effect: 'Allow'
+          Action:
+            - kinesis:PutRecord
+          Resource: arn:aws:kinesis:#{AWS::Region}:#{AWS::AccountId}:stream/order-events
+        - Effect: 'Allow'
+          Action:
+            - ses:SendEmail
+          Resource: "*"
+          Condition:
+            StringEquals:
+              ses:FromAddress:
+                - slscakeordersystem@grr.la
+        - Effect: 'Allow'
+          Action:
+            - sqs:SendMessage
+          Resource: 
+            - arn:aws:sqs:#{AWS::Region}:#{AWS::AccountId}:deliveryServiceQueue
+            - arn:aws:sqs:#{AWS::Region}:#{AWS::AccountId}:customerServiceQueue
+
+functions:
+  createOrder:
+    handler: handler.createOrder
+    events:
+      - http:
+          path: /order
+          method: post
+    environment:
+      orderTableName: ordersTable
+      orderStreamName: order-events
+  fulfillOrder:
+    handler: handler.fulfillOrder
+    events:
+      - http:
+          path: /order/fulfill
+          method: post
+    environment:
+      orderTableName: ordersTable
+      orderStreamName: order-events
+  sendOrderNotifications:
+    handler: handler.sendOrderNotifications
+    events:
+      - stream:
+          arn: arn:aws:kinesis:#{AWS::Region}:#{AWS::AccountId}:stream/order-events
+    environment:
+      region: 
+        Ref: AWS::Region
+      cakeProducerMail: slscakeproducer@grr.la
+      orderSystemMail: slscakeordersystem@grr.la
+      deliveryServiceQueue: 
+        Ref: deliveryServiceQueue
+      orderTableName: ordersTable
+  deliveryCompanyNotifications:
+    handler: handler.deliveryCompanyNotifications
+    events:
+      - sqs:
+          arn: 
+            Fn::GetAtt:
+              - deliveryServiceQueue
+              - Arn
+          batchSize: 1
+  completeOrder:
+    handler: handler.completeOrder
+    events:
+      - http:
+          path: /order/delivered
+          method: post
+    environment:
+      region: 
+        Ref: AWS::Region
+      orderTableName: ordersTable
+      customerServiceQueue: 
+        Ref: customerServiceQueue
+  customerReviewNotifications:
+    handler: handler.customerReviewNotifications
+    events:
+      - sqs:
+          arn: 
+            Fn::GetAtt:
+              - customerServiceQueue
+              - Arn
+          batchSize: 1
+
+resources:
+  Resources:
+    orderEventsStream:
+      Type: AWS::Kinesis::Stream
+      Properties:
+        Name: order-events
+        ShardCount: 1 
+    orderTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ordersTable
+        AttributeDefinitions:
+          - AttributeName: "orderId"
+            AttributeType: "S"
+        KeySchema:
+          - AttributeName: "orderId"
+            KeyType: "HASH"
+        BillingMode: PAY_PER_REQUEST
+    deliveryServiceQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: deliveryServiceQueue
+    customerServiceQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: customerServiceQueue
