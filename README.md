@@ -90,6 +90,8 @@ $ AWS_PROFILE=[profile_name] sls remove
 ```
 to delete all the AWS resources.
 
+> NOTE: You will need to remove any verified email addresses through the SES dashboard manually
+
 ## License
 Distributed under the GNU General Public License License. See `LICENSE` for more information. 
 
